@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@ali/tps-node": "^2.0.0",
+    "node-fetch": "^2.6.0",
+    "puppeteer": "^4.0.0"
+  }
+}
