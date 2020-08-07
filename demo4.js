@@ -53,6 +53,7 @@ const url = 'https://f.m.taobao.com/wow/z/pcraft/act/wupr?scm=&wh_biz=tm&wh_weex
       const timer = setInterval(() => {
           times++;
           const scrollHeight = scrollableSectionEl.scrollHeight;
+          console.log('scrollHeight', scrollHeight);
           scrollableSectionEl.scrollBy(0, deviceHeight);
           totalHeight = totalHeight + deviceHeight;
           if(times > 5 || totalHeight >= scrollHeight){

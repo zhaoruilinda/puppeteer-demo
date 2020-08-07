@@ -45,30 +45,40 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
   
   const scrollableSectionEl = await page.$('#Puppeteer_Page_Box');
 
-  await page.evaluate(async (scrollableSectionEl, deviceHeight = 667) => {
-    await new Promise((resolve, reject) => {
-      let totalHeight = 0;
-      let times = 0;
-      let scrollEl;
-      scrollableSectionEl.scrollTop = 10;
-      if(scrollableSectionEl.scrollTop > 0) {
-        scrollEl = scrollableSectionEl;
-      } else {
-        scrollEl = window;
-      }
-      const timer = setInterval(() => {
-          times++;
-          const scrollHeight = scrollableSectionEl.scrollHeight;
-          scrollEl.scrollBy(0, deviceHeight);
-          totalHeight = totalHeight + deviceHeight;
-          if(times > 9 || totalHeight >= scrollHeight){
-            clearInterval(timer);
-            resolve();
-          }
-      }, 2000);
-    });
+  await page.evaluate((scrollableSectionEl, deviceHeight = 667) => {
+    window.deviceHeight = deviceHeight;
+    window.scrollableSectionEl = scrollableSectionEl;
   }, scrollableSectionEl, deviceHeight);
 
+  // 页面滑动底部
+  try {
+    await page.evaluate(`(async () => {
+      await new Promise((resolve, reject) => {
+          let totalHeight = 0;
+          let times = 0;
+          let scrollEl;
+          window.scrollableSectionEl.scrollTop = 10;
+          if(window.scrollableSectionEl.scrollTop > 0) {
+            scrollEl = window.scrollableSectionEl;
+          } else {
+            scrollEl = window;
+          }
+          const timer = setInterval(() => {
+              times++;
+              const scrollHeight = window.scrollableSectionEl.scrollHeight;
+              console.log('scrollHeight', scrollHeight);
+              scrollEl.scrollBy(0, window.deviceHeight);
+              totalHeight = totalHeight + window.deviceHeight;
+              if (times > 9 || totalHeight >= scrollHeight) {
+                clearInterval(timer);
+                resolve();
+              }
+          }, 2000);
+      });
+  })()`);
+  } catch(err) {
+      console.log(err);
+  }
   const scrollHeight = await page.$eval('#Puppeteer_Page_Box', el => el.scrollHeight);
   console.log('scrollHeight', scrollHeight);
   
@@ -98,29 +108,38 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
     },
   });
 
-  const bgImgInfoList = await page.evaluate(async () => {
+  await page.evaluate(() => {
+    const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
+    window.base64Reg = base64Reg;
+  });
+
+  const bgImgInfoList = await page.evaluate(`(async() => {
     let bgImgs = [...document.querySelectorAll('div[placeholder]')];
     console.log('bgImgs.length', bgImgs.length);
     async function getBackgroundSize(elem) {
-      var computedStyle = getComputedStyle(elem),
-          image = new Image(),
-          src = computedStyle.backgroundImage.replace(/url\((['"])?(.*?)\1\)/gi, '$2'),
-          cssSize = computedStyle.backgroundSize,
-          elemW = parseInt(computedStyle.width.replace('px', ''), 10),
-          elemH = parseInt(computedStyle.height.replace('px', ''), 10),
-          elemDim = [elemW, elemH],
-          computedDim = [],
-          ratio;
+      const computedStyle = getComputedStyle(elem);
+      const image = new Image();
+      const reg = /\(\"(.+?)\"\)/;
+      const matches = reg.exec(computedStyle.backgroundImage)[1] || [];
+      const src = matches[1] || '';
+      const cssSize = computedStyle.backgroundSize;
+      const elemW = parseInt(computedStyle.width.replace('px', ''), 10);
+      const elemH = parseInt(computedStyle.height.replace('px', ''), 10);
+      const elemDim = [elemW, elemH];
+      const computedDim = [];
+      let ratio = 0;
       image.src = src;
       ratio = image.width > image.height ? image.width / image.height : image.height / image.width;
-      cssSize = cssSize.split(' ');
-      computedDim[0] = cssSize[0];
-      computedDim[1] = cssSize.length > 1 ? cssSize[1] : 'auto';
-      const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
-      const isBase64 = base64Reg.test(src);
+      const cssSizes = cssSize.split(' ');
+      computedDim[0] = cssSizes[0];
+      computedDim[1] = cssSizes.length > 1 ? cssSizes[1] : 'auto';
+      
+      const isBase64 = window.base64Reg.test(src);
       let size = 0;
       if(isBase64){
-        let str = src.replace(/^\s*data:image\/(png|gif|jpg);base64,/, '');
+        let str = src.replace('data:image/png;base64,', '');
+        str = src.replace('data:image/jpg;base64,', '');
+        str = src.replace('data:image/gif;base64,', '');
         const equalIndex = str.indexOf('=');
         if (str.indexOf('=') > 0) {
             str = str.substring(0, equalIndex);
@@ -133,8 +152,8 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
         });
         size = res.headers.get('content-length');
       }
-      
-      if(cssSize[0] === 'cover') {
+
+      if(cssSizes[0] === 'cover') {
         if(elemDim[0] > elemDim[1]) {
             if(elemDim[0] / elemDim[1] >= ratio) {
                 computedDim[0] = elemDim[0];
@@ -147,7 +166,7 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
             computedDim[0] = 'auto';
             computedDim[1] = elemDim[1];
         }
-      } else if(cssSize[0] === 'contain') {
+      } else if(cssSizes[0] === 'contain') {
           if(elemDim[0] < elemDim[1]) {
               computedDim[0] = elemDim[0];
               computedDim[1] = 'auto';
@@ -161,11 +180,11 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
               }
           }
       } else {
-          for(var i = cssSize.length; i--;) {
-            if (cssSize[i].indexOf('px') > -1) {
-              computedDim[i] = cssSize[i].replace('px', '');
-            } else if (cssSize[i].indexOf('%') > -1) {
-              computedDim[i] = elemDim[i] * (cssSize[i].replace('%', '') / 100);
+          for(var i = cssSizes.length; i--;) {
+            if (cssSizes[i].indexOf('px') > -1) {
+              computedDim[i] = cssSizes[i].replace('px', '');
+            } else if (cssSizes[i].indexOf('%') > -1) {
+              computedDim[i] = elemDim[i] * (cssSizes[i].replace('%', '') / 100);
             }
           }
       }
@@ -177,7 +196,6 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
         computedDim[0] = computedDim[0] === 'auto' ? image.width / ratio : computedDim[0];
         computedDim[1] = computedDim[1] === 'auto' ? image.height / ratio : computedDim[1];
       }
-
       return {
         src,
         size,
@@ -192,61 +210,76 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
     });
     const list = await Promise.all(promises);
     return list;
-  });
+  })()`);  
   
-  const imgInfoList = await page.evaluate(async () => {
+  const imgInfoList = await page.evaluate(`(async() => {
     const imgs = [...document.querySelectorAll('img')];
     console.log('imgs.length', imgs.length);
-    const promises = imgs.map(async img => {
-      const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
-      let size = 0;
-      const src = img && img.src || '';
-      console.log('src', src);
-      const isBase64 = base64Reg.test(src);
-      if(isBase64){
-        let str = src.replace(/^\s*data:image\/(png|gif|jpg);base64,/, '');
-        const equalIndex = str.indexOf('=');
-        if (str.indexOf('=') > 0) {
-            str = str.substring(0, equalIndex);
-        }
-        const strLength = str.length;
-        size = parseInt(strLength - (strLength / 8) * 2);
-      } else {
-        const res = await fetch(src, {
-          method: 'HEAD'
-        });
-        size = res.headers.get('content-length');
-      }
-      return {
-        src,
-        width: img.width,
-        height: img.height,
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        size,
-      };
-    });
-    const list = await Promise.all(promises);
-    return list;
-  });
+    let list = [];
+    try {
+      const promises = imgs.map(async img => {
+        let size = 0;
+        const src = img && img.src || '';
+        const isBase64 = window.base64Reg.test(src);
+        if(isBase64){
+          let str = src.replace('data:image/png;base64,', '');
+          str = src.replace('data:image/jpg;base64,', '');
+          str = src.replace('data:image/gif;base64,', '');
 
-  const imgList = bgImgInfoList.concat(imgInfoList);
+          const equalIndex = str.indexOf('=');
+          if (str.indexOf('=') > 0) {
+            str = str.substring(0, equalIndex);
+          }
+          const strLength = str.length;
+          size = parseInt(strLength - (strLength / 8) * 2);
+        } else {
+          const res = await fetch(src, {
+            method: 'HEAD'
+          });
+          size = res.headers.get('content-length');
+        }
+        return {
+          src,
+          width: img.width,
+          height: img.height,
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+          size,
+        };
+      });
+      list = await Promise.all(promises);
+    } catch(err) {
+      console.log(err);
+    }
+    
+    return list;
+  })()`);
+
+  const imgList = bgImgInfoList.concat(imgInfoList);  
 
   console.log('------imgList-------', imgList.length);
+  // const filterImgList = imgList.filter(item => {
+  //   const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
+  //   const isBase64 = base64Reg.test(item.src);
+  //   return (!isBase64 && (item.height >= 50 || item.width >= 50));
+  // })
+
+
+  // 过滤箭头等icon图片
   const filterImgList = imgList.filter(item => {
     const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
     const isBase64 = base64Reg.test(item.src);
     return (!isBase64 && (item.height >= 50 || item.width >= 50));
-  })
+  });
 
   console.log('------filterImgList-------', filterImgList.length);
 
+
   await page.evaluate(filterImgList => {
     window.filterImgList = filterImgList;
-    console.log('**********window.filterImgList', window.filterImgList.length);
   }, filterImgList);
 
-  const newImgList = await page.evaluate(async () => {
+  const newImgList = await page.evaluate(`(async () => {
     function createImgData(dataDetail) {
       var _a;
       const canvas = document.createElement('canvas');
@@ -266,21 +299,25 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
       return newImageData;
     }
     function createGrayscale(imgData) {
-      const newData = Array(imgData.data.length);
-      newData.fill(0);
-      imgData.data.forEach((_data, index) => {
-        if ((index + 1) % 4 === 0) {
-            const R = imgData.data[index - 3];
-            const G = imgData.data[index - 2];
-            const B = imgData.data[index - 1];
-            const gray = ~~((R + G + B) / 3);
-            newData[index - 3] = gray;
-            newData[index - 2] = gray;
-            newData[index - 1] = gray;
-            newData[index] = 255;
-        }
-      });
-      return createImgData(newData);
+      const imgDataLen = imgData && imgData.data && imgData.data.length || 0;
+      if(imgDataLen > 0) {
+        const newData = Array(imgDataLen);
+        newData.fill(0);
+        imgData.data.forEach((_data, index) => {
+          if ((index + 1) % 4 === 0) {
+              const R = imgData.data[index - 3];
+              const G = imgData.data[index - 2];
+              const B = imgData.data[index - 1];
+              const gray = ~~((R + G + B) / 3);
+              newData[index - 3] = gray;
+              newData[index - 2] = gray;
+              newData[index - 1] = gray;
+              newData[index] = 255;
+          }
+        });
+        return createImgData(newData);
+      }
+
     }
     function getAHashFingerprint(imgData) {
         const grayList = imgData.data.reduce((pre, cur, index) => {
@@ -294,9 +331,8 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
         return grayList.map(gray => (gray >= grayAverage ? 1 : 0)).join('');
     }
     const imgList = window.filterImgList || [];
-    console.log('********* inner imgList ****', imgList.length);
     const newImgList = [].concat(imgList);
-    console.log('newImgList.length', newImgList.length);
+
     for(let img of newImgList) {
       const src = img.src || '';
       const originSrcs = /([a-z|A-Z|0-9|_|!|\.|\/|-])*?\.(png|jpg)/.exec(src) || [];
@@ -330,18 +366,9 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
         img.hash = '';
       }
     }
-    return newImgList;
-  });
 
-  // for(let i = 0, len = newImgList.length; i < len; i++) {
-  //   const base64 = newImgList[i] && newImgList[i].base64 || '';
-  //   const hash = await getHash(base64);
-  //   console.log('hash', hash);
-  //   newImgList.hash = hash;
-  //   delete newImgList[i].base64;
-  // }
-  // console.log('----------');
-  // console.log(newImgList);
+    return newImgList;
+  })()`);
 
   function getHammingDistance(str1, str2) {
     let distance = 0;
@@ -357,9 +384,6 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
   }
   const len = newImgList.length;
   const repeatImgs = [];
-  console.log('^^^^^^^^^^^^^^^^^newImgList len', len);
-  console.log('----------');
-  console.log(newImgList);
   
   for(let i = 0; i < len - 1; i++) {
     for(let j = i + 1; j < len; j++) {
@@ -367,14 +391,7 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
       const hash2 = newImgList[j].hash || '';
       const hammingDistance = getHammingDistance(hash1, hash2);
       const hammingSimilarity = ((hash1.length - hammingDistance) / hash1.length).toFixed(2);
-      
-      // console.log('hash1', hash1);
-      // console.log('hash2', hash2);
-      // console.log('hammingDistance', hammingDistance);
-      // console.log('hammingSimilarity', hammingSimilarity);
-      if(hammingSimilarity >= 0.95) {
-        // console.log('newImgList[i].src', newImgList[i].src);
-        // console.log('newImgList[j].src', newImgList[j].src);
+      if(Number(hammingSimilarity) >= 0.95) {
         repeatImgs.push({
           src1: newImgList[i].src,
           src2: newImgList[j].src,
@@ -384,17 +401,20 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
     }
   }
 
-  console.log('repeatImgs');
-  console.log(repeatImgs);
+  console.log('repeatImgs', repeatImgs);
 
-  // console.log('imgList');
-  // console.log(imgList);
-
-  const errorImgList = []; // 图片尺寸要小于展示尺寸的2倍，且图片小于50KB
+  const errorImgList = []; // 图片尺寸要小于展示尺寸的3倍，且图片小于50KB
   const reg = /_(\d)*x(\d)*/;
+  const base64Reg = /^\s*data:([a-z]+\/[a-z0-9-+.]+(;[a-z-]+=[a-z0-9-]+)?)?(;base64)?,([a-z0-9!$&',()*+;=\-._~:@\/?%\s]*?)\s*$/i;
 
   imgList.forEach(img => {
-    if(!reg.test(img.src) && img.size > 10240) {
+    const isBase64 = base64Reg.test(img.src);
+    if(isBase64 && img.size > 10240) {
+      errorImgList.push({
+        ...img,
+        errorCode: 'base64',
+      });
+    } else if(!reg.test(img.src) && img.size > 10240 && img.src.indexOf('.gif') == -1) {
       errorImgList.push({
         ...img,
         errorCode: 'origin',
@@ -404,15 +424,16 @@ const url = 'https://market.m.taobao.com/app/fliggy-shop/rax-pi/pages/weex?selle
         ...img,
         errorCode: 'size',
       });
-    } else if(img.naturalWidth > (img.width * 2)) {
+    } else if(img.naturalWidth > (img.width * 3) || img.naturalHeight > (img.height * 3)) {
       errorImgList.push({
         ...img,
         errorCode: 'suggest',
       });
     }
   });
-  // console.log('errorImgList');
-  // console.log(errorImgList);
+
+  console.log('errorImgList');
+  console.log(errorImgList);
 
   await browser.close();
 })();
